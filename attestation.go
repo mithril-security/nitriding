@@ -3,13 +3,9 @@ package nitriding
 import (
 	"bytes"
 	"crypto/sha256"
-	"encoding/base64"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"net/http"
-	"regexp"
-	"strings"
 
 	"github.com/hf/nitrite"
 	"github.com/hf/nsm"
@@ -74,30 +70,33 @@ func attestationHandler(hashes *AttestationHashes) http.HandlerFunc {
 			return
 		}
 
-		nonce := r.URL.Query().Get("nonce")
-		if nonce == "" {
-			http.Error(w, errNoNonce, http.StatusBadRequest)
-			return
-		}
-		nonce = strings.ToLower(nonce)
-		if valid, _ := regexp.MatchString(nonceRegExp, nonce); !valid {
-			http.Error(w, errBadNonceFormat, http.StatusBadRequest)
-			return
-		}
-		// Decode hex-encoded nonce.
-		rawNonce, err := hex.DecodeString(nonce)
-		if err != nil {
-			http.Error(w, errBadNonceFormat, http.StatusBadRequest)
-			return
-		}
-
-		rawDoc, err := attest(rawNonce, hashes.Serialize(), nil)
+		rawDoc, err := attest(nil, hashes.Serialize(), nil)
 		if err != nil {
 			http.Error(w, errFailedAttestation, http.StatusInternalServerError)
 			return
 		}
-		b64Doc := base64.StdEncoding.EncodeToString(rawDoc)
-		fmt.Fprintln(w, b64Doc)
+		w.Header().Set("Content-Type", "application/cbor")
+		w.Write(rawDoc)
+	}
+}
+
+// certHandler takes as input a pointer to a byte slice that contains a
+// certificate.  It returns a HandlerFunc that returns the certificate to the
+// requester.  If the certificate is nil, the HandlerFunc returns an error.
+func certHandler(cert *[]byte) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, errMethodNotGET, http.StatusMethodNotAllowed)
+			return
+		}
+
+		if cert == nil {
+			http.Error(w, errFailedAttestation, http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/x-x509-ca-cert")
+		w.Write(*cert)
 	}
 }
 

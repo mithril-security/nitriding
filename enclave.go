@@ -42,6 +42,7 @@ const (
 	pathRoot        = "/enclave"
 	pathNonce       = "/enclave/nonce"
 	pathAttestation = "/enclave/attestation"
+	pathCert        = "/enclave/cert"
 	pathState       = "/enclave/state"
 	pathSync        = "/enclave/sync"
 	pathHash        = "/enclave/hash"
@@ -64,6 +65,7 @@ type Enclave struct {
 	sync.RWMutex
 	cfg             *Config
 	pubSrv, privSrv http.Server
+	tlsCert         *[]byte
 	revProxy        *httputil.ReverseProxy
 	hashes          *AttestationHashes
 	nonceCache      *cache
@@ -179,6 +181,7 @@ func NewEnclave(cfg *Config) (*Enclave, error) {
 			Addr:    fmt.Sprintf("127.0.0.1:%d", cfg.IntPort),
 			Handler: chi.NewRouter(),
 		},
+		tlsCert:    new([]byte),
 		nonceCache: newCache(defaultItemExpiry),
 		hashes:     new(AttestationHashes),
 		stop:       make(chan bool),
@@ -193,6 +196,7 @@ func NewEnclave(cfg *Config) (*Enclave, error) {
 	// Register public HTTP API.
 	m := e.pubSrv.Handler.(*chi.Mux)
 	m.Get(pathAttestation, attestationHandler(e.hashes))
+	m.Get(pathCert, certHandler(e.tlsCert))
 	m.Get(pathNonce, nonceHandler(e))
 	m.Get(pathRoot, rootHandler(e.cfg))
 	m.Post(pathSync, respSyncHandler(e))
@@ -415,6 +419,7 @@ func (e *Enclave) setCertFingerprint(rawData []byte) error {
 			}
 			if !cert.IsCA {
 				e.hashes.tlsKeyHash = sha256.Sum256(cert.Raw)
+				*e.tlsCert = cert.Raw
 				elog.Printf("Set SHA-256 fingerprint of server's certificate to: %x",
 					e.hashes.tlsKeyHash[:])
 				return nil
