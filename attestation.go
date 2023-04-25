@@ -141,9 +141,9 @@ func imageHandler() http.HandlerFunc {
 		imgLoadResp.Body.Close()
 
 		ports := make(map[nat.Port][]nat.PortBinding)
-		ports["8443/tcp"] = []nat.PortBinding{nat.PortBinding{
+		ports["8000/tcp"] = []nat.PortBinding{nat.PortBinding{
 			HostIP: "127.0.0.1",
-			HostPort: "8443",
+			HostPort: "8000",
 		}}
 
 		resp, err := cli.ContainerCreate(ctx, &container.Config{
