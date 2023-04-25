@@ -14,6 +14,7 @@ import (
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
+	"github.com/docker/go-connections/nat"
 	"github.com/docker/docker/client"
 )
 
@@ -139,9 +140,17 @@ func imageHandler() http.HandlerFunc {
 		}
 		imgLoadResp.Body.Close()
 
+		ports := make(map[nat.Port][]nat.PortBinding)
+		ports["8443/tcp"] = []nat.PortBinding{nat.PortBinding{
+			HostIP: "127.0.0.1",
+			HostPort: "8443",
+		}}
+
 		resp, err := cli.ContainerCreate(ctx, &container.Config{
 			Image: "box",
-		}, nil, nil, nil, "")
+		}, &container.HostConfig{
+			PortBindings: ports,
+		}, nil, nil, "")
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
