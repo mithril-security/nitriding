@@ -6,10 +6,15 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"context"
 
 	"github.com/hf/nitrite"
 	"github.com/hf/nsm"
 	"github.com/hf/nsm/request"
+
+	"github.com/docker/docker/api/types"
+	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/client"
 )
 
 const (
@@ -22,6 +27,7 @@ const (
 
 var (
 	errMethodNotGET      = "only HTTP GET requests are allowed"
+	errMethodNotPOST     = "only HTTP POST requests are allowed"
 	errBadForm           = "failed to parse POST form data"
 	errNoNonce           = "could not find nonce in URL query parameters"
 	errBadNonceFormat    = fmt.Sprintf("unexpected nonce format; must be %d-digit hex string", nonceNumDigits)
@@ -97,6 +103,66 @@ func certHandler(cert *[]byte) http.HandlerFunc {
 
 		w.Header().Set("Content-Type", "application/x-x509-ca-cert")
 		w.Write(*cert)
+	}
+}
+
+// certHandler takes as input a pointer to a byte slice that contains a
+// certificate.  It returns a HandlerFunc that returns the certificate to the
+// requester.  If the certificate is nil, the HandlerFunc returns an error.
+func imageHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ctx := context.Background()
+
+		if r.Method != http.MethodPost {
+			http.Error(w, errMethodNotPOST, http.StatusMethodNotAllowed)
+			return
+		}
+
+		file, _, err := r.FormFile("image")
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		defer file.Close()
+
+		cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		defer cli.Close()
+
+		imgLoadResp, err := cli.ImageLoad(ctx, file, true)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		imgLoadResp.Body.Close()
+
+		resp, err := cli.ContainerCreate(ctx, &container.Config{
+			Image: "box",
+		}, nil, nil, nil, "")
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+	
+		if err := cli.ContainerStart(ctx, resp.ID, types.ContainerStartOptions{}); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+	
+		statusCh, errCh := cli.ContainerWait(ctx, resp.ID, container.WaitConditionNotRunning)
+		select {
+		case err := <-errCh:
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+		case <-statusCh:
+		}
+
+		w.WriteHeader(200)
 	}
 }
 
