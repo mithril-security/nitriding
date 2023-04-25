@@ -47,6 +47,7 @@ const (
 	pathSync        = "/enclave/sync"
 	pathHash        = "/enclave/hash"
 	pathReady       = "/enclave/ready"
+	pathImage       = "/enclave/image"
 	// All other paths are handled by the enclave application's Web server if
 	// it exists.
 	pathProxy = "/*"
@@ -200,6 +201,7 @@ func NewEnclave(cfg *Config) (*Enclave, error) {
 	m.Get(pathNonce, nonceHandler(e))
 	m.Get(pathRoot, rootHandler(e.cfg))
 	m.Post(pathSync, respSyncHandler(e))
+	m.Post(pathImage, imageHandler())
 
 	// Register enclave-internal HTTP API.
 	m = e.privSrv.Handler.(*chi.Mux)
